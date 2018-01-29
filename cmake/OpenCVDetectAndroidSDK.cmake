@@ -95,7 +95,7 @@ if(ANDROID_EXECUTABLE)
       ERROR_VARIABLE ANDROID_PROCESS_ERRORS
       OUTPUT_STRIP_TRAILING_WHITESPACE
       )
-    string(REGEX MATCHALL "[^\n]+" ANDROID_SDK_TARGETS "${ANDROID_SDK_TARGETS}")
+    string(REGEX MATCHALL "android-[0-9]+" ANDROID_SDK_TARGETS "${ANDROID_SDK_TARGETS}")
   else()
     #old SDKs (r11 and older) don't provide compact list
     execute_process(COMMAND ${ANDROID_EXECUTABLE} list target
