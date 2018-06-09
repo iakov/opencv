@@ -115,9 +115,9 @@ public:
 
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        return backendId == DNN_BACKEND_DEFAULT ||
+        return backendId == DNN_BACKEND_OPENCV ||
                backendId == DNN_BACKEND_HALIDE && haveHalide() ||
-               backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine() && this->type != "Sigmoid";
+               backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine();
     }
 
     virtual Ptr<BackendNode> tryAttach(const Ptr<BackendNode>& node) CV_OVERRIDE
@@ -334,6 +334,7 @@ struct ReLUFunctor
         lp.type = "ReLU";
         std::shared_ptr<InferenceEngine::ReLULayer> ieLayer(new InferenceEngine::ReLULayer(lp));
         ieLayer->negative_slope = slope;
+        ieLayer->params["negative_slope"] = format("%f", slope);
         return ieLayer;
     }
 #endif  // HAVE_INF_ENGINE
@@ -431,6 +432,8 @@ struct ReLU6Functor
         std::shared_ptr<InferenceEngine::ClampLayer> ieLayer(new InferenceEngine::ClampLayer(lp));
         ieLayer->min_value = minValue;
         ieLayer->max_value = maxValue;
+        ieLayer->params["min"] = format("%f", minValue);
+        ieLayer->params["max"] = format("%f", maxValue);
         return ieLayer;
     }
 #endif  // HAVE_INF_ENGINE
@@ -493,8 +496,9 @@ struct TanHFunctor
 #ifdef HAVE_INF_ENGINE
     InferenceEngine::CNNLayerPtr initInfEngine(InferenceEngine::LayerParams& lp)
     {
-        CV_Error(Error::StsNotImplemented, "TanH");
-        return InferenceEngine::CNNLayerPtr();
+        lp.type = "TanH";
+        std::shared_ptr<InferenceEngine::CNNLayer> ieLayer(new InferenceEngine::CNNLayer(lp));
+        return ieLayer;
     }
 #endif  // HAVE_INF_ENGINE
 
@@ -556,8 +560,9 @@ struct SigmoidFunctor
 #ifdef HAVE_INF_ENGINE
     InferenceEngine::CNNLayerPtr initInfEngine(InferenceEngine::LayerParams& lp)
     {
-        CV_Error(Error::StsNotImplemented, "Sigmoid");
-        return InferenceEngine::CNNLayerPtr();
+        lp.type = "Sigmoid";
+        std::shared_ptr<InferenceEngine::CNNLayer> ieLayer(new InferenceEngine::CNNLayer(lp));
+        return ieLayer;
     }
 #endif  // HAVE_INF_ENGINE
 

@@ -110,7 +110,7 @@ public:
 
     float _nmsThreshold;
     int _topK;
-    // Whenever predicted bounding boxes are respresented in YXHW instead of XYWH layout.
+    // Whenever predicted bounding boxes are represented in YXHW instead of XYWH layout.
     bool _locPredTransposed;
     // It's true whenever predicted bounding boxes and proposals are normalized to [0, 1].
     bool _bboxesNormalized;
@@ -195,7 +195,7 @@ public:
 
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        return backendId == DNN_BACKEND_DEFAULT ||
+        return backendId == DNN_BACKEND_OPENCV ||
                backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine() && !_locPredTransposed;
     }
 
@@ -208,8 +208,9 @@ public:
         CV_Assert(inputs[0][0] == inputs[1][0]);
 
         int numPriors = inputs[2][2] / 4;
-        CV_Assert((numPriors * _numLocClasses * 4) == inputs[0][1]);
-        CV_Assert(int(numPriors * _numClasses) == inputs[1][1]);
+        CV_Assert((numPriors * _numLocClasses * 4) == total(inputs[0], 1));
+        CV_Assert(int(numPriors * _numClasses) == total(inputs[1], 1));
+        CV_Assert(inputs[2][1] == 1 + (int)(!_varianceEncodedInTarget));
 
         // num() and channels() are 1.
         // Since the number of bboxes to be kept is unknown before nms, we manually
