@@ -98,11 +98,12 @@ void writeLogMessage(LogLevel logLevel, const char* message)
         break;
     }
     __android_log_print(android_logLevel, "OpenCV/" CV_VERSION, "%s", ss.str().c_str());
-#endif
+#else
     std::ostream* out = (logLevel <= LOG_LEVEL_WARNING) ? &std::cerr : &std::cout;
     (*out) << ss.str();
     if (logLevel <= LOG_LEVEL_WARNING)
         (*out) << std::flush;
+#endif
 }
 
 } // namespace
