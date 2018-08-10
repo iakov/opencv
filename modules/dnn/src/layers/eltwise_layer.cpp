@@ -187,7 +187,7 @@ public:
             int c, j, k, n = nsrcs;
             const float* coeffsptr = coeffs && !coeffs->empty() ? &coeffs->at(0) : 0;
             float* dstptr0 = dst->ptr<float>();
-            int blockSize0 = 1 << 12, blockSize = blockSize0;
+            int blockSize0 = 1 << 12, blockSize;
 
             for( size_t ofs = stripeStart; ofs < stripeEnd; ofs += blockSize )
             {
@@ -452,8 +452,13 @@ public:
 
     bool setActivation(const Ptr<ActivationLayer>& layer) CV_OVERRIDE
     {
-        activ = layer;
-        return !activ.empty();
+        if (activ.empty() || layer.empty())
+        {
+            activ = layer;
+            return !activ.empty();
+        }
+        else
+            return false;
     }
 
     Ptr<ActivationLayer> activ;
