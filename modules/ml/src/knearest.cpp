@@ -98,7 +98,7 @@ public:
         return true;
     }
 
-    virtual void doTrain(InputArray points) { (void)points; }
+    virtual void doTrain(InputArray points) { CV_UNUSED(points); }
 
     void clear()
     {
@@ -513,6 +513,17 @@ protected:
 Ptr<KNearest> KNearest::create()
 {
     return makePtr<KNearestImpl>();
+}
+
+Ptr<KNearest> KNearest::load(const String& filepath)
+{
+    FileStorage fs;
+    fs.open(filepath, FileStorage::READ);
+
+    Ptr<KNearest> knearest = makePtr<KNearestImpl>();
+
+    ((KNearestImpl*)knearest.get())->read(fs.getFirstTopLevelNode());
+    return knearest;
 }
 
 }

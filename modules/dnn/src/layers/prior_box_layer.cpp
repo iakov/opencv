@@ -271,7 +271,7 @@ public:
     virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
         return backendId == DNN_BACKEND_OPENCV ||
-               backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine();
+               (backendId == DNN_BACKEND_INFERENCE_ENGINE && haveInfEngine());
     }
 
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
@@ -297,15 +297,18 @@ public:
         return false;
     }
 
-    void finalize(const std::vector<Mat*> &inputs, std::vector<Mat> &outputs) CV_OVERRIDE
+    void finalize(InputArrayOfArrays inputs_arr, OutputArrayOfArrays) CV_OVERRIDE
     {
-        CV_CheckGT(inputs.size(), (size_t)1, "");
-        CV_CheckEQ(inputs[0]->dims, 4, ""); CV_CheckEQ(inputs[1]->dims, 4, "");
-        int layerWidth = inputs[0]->size[3];
-        int layerHeight = inputs[0]->size[2];
+        std::vector<Mat> inputs;
+        inputs_arr.getMatVector(inputs);
 
-        int imageWidth = inputs[1]->size[3];
-        int imageHeight = inputs[1]->size[2];
+        CV_CheckGT(inputs.size(), (size_t)1, "");
+        CV_CheckEQ(inputs[0].dims, 4, ""); CV_CheckEQ(inputs[1].dims, 4, "");
+        int layerWidth = inputs[0].size[3];
+        int layerHeight = inputs[0].size[2];
+
+        int imageWidth = inputs[1].size[3];
+        int imageHeight = inputs[1].size[2];
 
         _stepY = _stepY == 0 ? (static_cast<float>(imageHeight) / layerHeight) : _stepY;
         _stepX = _stepX == 0 ? (static_cast<float>(imageWidth) / layerWidth) : _stepX;
@@ -399,25 +402,26 @@ public:
         CV_TRACE_FUNCTION();
         CV_TRACE_ARG_VALUE(name, "name", name.c_str());
 
-        CV_OCL_RUN(IS_DNN_OPENCL_TARGET(preferableTarget) &&
-                   OCL_PERFORMANCE_CHECK(ocl::Device::getDefault().isIntel()),
+        CV_OCL_RUN(IS_DNN_OPENCL_TARGET(preferableTarget),
                    forward_ocl(inputs_arr, outputs_arr, internals_arr))
 
-        Layer::forward_fallback(inputs_arr, outputs_arr, internals_arr);
-    }
+        if (inputs_arr.depth() == CV_16S)
+        {
+            forward_fallback(inputs_arr, outputs_arr, internals_arr);
+            return;
+        }
 
-    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals) CV_OVERRIDE
-    {
-        CV_TRACE_FUNCTION();
-        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+        std::vector<Mat> inputs, outputs;
+        inputs_arr.getMatVector(inputs);
+        outputs_arr.getMatVector(outputs);
 
         CV_Assert(inputs.size() == 2);
 
-        int _layerWidth = inputs[0]->size[3];
-        int _layerHeight = inputs[0]->size[2];
+        int _layerWidth = inputs[0].size[3];
+        int _layerHeight = inputs[0].size[2];
 
-        int _imageWidth = inputs[1]->size[3];
-        int _imageHeight = inputs[1]->size[2];
+        int _imageWidth = inputs[1].size[3];
+        int _imageHeight = inputs[1].size[2];
 
         float* outputPtr = outputs[0].ptr<float>();
         float _boxWidth, _boxHeight;
@@ -476,72 +480,73 @@ public:
         }
     }
 
+#ifdef HAVE_INF_ENGINE
     virtual Ptr<BackendNode> initInfEngine(const std::vector<Ptr<BackendWrapper> >&) CV_OVERRIDE
     {
-#ifdef HAVE_INF_ENGINE
-        InferenceEngine::LayerParams lp;
-        lp.name = name;
-        lp.type = _explicitSizes ? "PriorBoxClustered" : "PriorBox";
-        lp.precision = InferenceEngine::Precision::FP32;
-        std::shared_ptr<InferenceEngine::CNNLayer> ieLayer(new InferenceEngine::CNNLayer(lp));
-
         if (_explicitSizes)
         {
-            CV_Assert(!_boxWidths.empty()); CV_Assert(!_boxHeights.empty());
+            InferenceEngine::Builder::PriorBoxClusteredLayer ieLayer(name);
+            ieLayer.setSteps({_stepY, _stepX});
+
+            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
+            ieLayer.setOffset(_offsetsX[0]);
+
+            ieLayer.setClip(_clip);
+            ieLayer.setFlip(false);  // We already flipped aspect ratios.
+
+            InferenceEngine::Builder::Layer l = ieLayer;
+
+            CV_Assert_N(!_boxWidths.empty(), !_boxHeights.empty(), !_variance.empty());
             CV_Assert(_boxWidths.size() == _boxHeights.size());
-            ieLayer->params["width"] = format("%f", _boxWidths[0]);
-            ieLayer->params["height"] = format("%f", _boxHeights[0]);
-            for (int i = 1; i < _boxWidths.size(); ++i)
-            {
-                ieLayer->params["width"] += format(",%f", _boxWidths[i]);
-                ieLayer->params["height"] += format(",%f", _boxHeights[i]);
-            }
+            l.getParameters()["width"] = _boxWidths;
+            l.getParameters()["height"] = _boxHeights;
+            l.getParameters()["variance"] = _variance;
+            return Ptr<BackendNode>(new InfEngineBackendNode(l));
         }
         else
         {
-            ieLayer->params["min_size"] = format("%f", _minSize);
-            ieLayer->params["max_size"] = _maxSize > 0 ? format("%f", _maxSize) : "";
+            InferenceEngine::Builder::PriorBoxLayer ieLayer(name);
 
+            CV_Assert(!_explicitSizes);
+
+            ieLayer.setMinSize(_minSize);
+            if (_maxSize > 0)
+                ieLayer.setMaxSize(_maxSize);
+
+            CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
+            ieLayer.setOffset(_offsetsX[0]);
+
+            ieLayer.setClip(_clip);
+            ieLayer.setFlip(false);  // We already flipped aspect ratios.
+
+            InferenceEngine::Builder::Layer l = ieLayer;
+            if (_stepX == _stepY)
+            {
+                l.getParameters()["step"] = _stepX;
+                l.getParameters()["step_h"] = 0.0f;
+                l.getParameters()["step_w"] = 0.0f;
+            }
+            else
+            {
+                l.getParameters()["step"] = 0.0f;
+                l.getParameters()["step_h"] = _stepY;
+                l.getParameters()["step_w"] = _stepX;
+            }
             if (!_aspectRatios.empty())
             {
-                ieLayer->params["aspect_ratio"] = format("%f", _aspectRatios[0]);
-                for (int i = 1; i < _aspectRatios.size(); ++i)
-                    ieLayer->params["aspect_ratio"] += format(",%f", _aspectRatios[i]);
+                l.getParameters()["aspect_ratio"] = _aspectRatios;
             }
+            CV_Assert(!_variance.empty());
+            l.getParameters()["variance"] = _variance;
+            return Ptr<BackendNode>(new InfEngineBackendNode(l));
         }
-
-        ieLayer->params["flip"] = "0";  // We already flipped aspect ratios.
-        ieLayer->params["clip"] = _clip ? "1" : "0";
-
-        CV_Assert(!_variance.empty());
-        ieLayer->params["variance"] = format("%f", _variance[0]);
-        for (int i = 1; i < _variance.size(); ++i)
-            ieLayer->params["variance"] += format(",%f", _variance[i]);
-
-        if (_stepX == _stepY)
-        {
-            ieLayer->params["step"] = format("%f", _stepX);
-            ieLayer->params["step_h"] = "0.0";
-            ieLayer->params["step_w"] = "0.0";
-        }
-        else
-        {
-            ieLayer->params["step"] = "0.0";
-            ieLayer->params["step_h"] = format("%f", _stepY);
-            ieLayer->params["step_w"] = format("%f", _stepX);
-        }
-        CV_CheckEQ(_offsetsX.size(), (size_t)1, ""); CV_CheckEQ(_offsetsY.size(), (size_t)1, ""); CV_CheckEQ(_offsetsX[0], _offsetsY[0], "");
-        ieLayer->params["offset"] = format("%f", _offsetsX[0]);
-
-        return Ptr<BackendNode>(new InfEngineBackendNode(ieLayer));
-#endif  // HAVE_INF_ENGINE
-        return Ptr<BackendNode>();
     }
+#endif  // HAVE_INF_ENGINE
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
                            const std::vector<MatShape> &outputs) const CV_OVERRIDE
     {
-        (void)outputs; // suppress unused variable warning
+        CV_UNUSED(outputs); // suppress unused variable warning
         long flops = 0;
 
         for (int i = 0; i < inputs.size(); i++)

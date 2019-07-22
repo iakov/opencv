@@ -107,7 +107,7 @@ bool WebPDecoder::readHeader()
     {
         fs.open(m_filename.c_str(), std::ios::binary);
         fs.seekg(0, std::ios::end);
-        fs_size = fs.tellg();
+        fs_size = safeCastToSizeT(fs.tellg(), "File is too large");
         fs.seekg(0, std::ios::beg);
         CV_Assert(fs && "File stream error");
         CV_CheckGE(fs_size, WEBP_HEADER_SIZE, "File is too small");
@@ -207,9 +207,9 @@ bool WebPDecoder::readData(Mat &img)
         {
             cvtColor(read_img, img, COLOR_BGRA2BGR);
         }
-        else if (img.type() == CV_8UC3 && m_type == CV_8UC4)
+        else if (img.type() == CV_8UC4 && m_type == CV_8UC3)
         {
-            cvtColor(read_img, img, COLOR_BGRA2BGR);
+            cvtColor(read_img, img, COLOR_BGR2BGRA);
         }
         else
         {
@@ -266,7 +266,7 @@ bool WebPEncoder::write(const Mat& img, const std::vector<int>& params)
 
     if (channels == 1)
     {
-        cvtColor(*image, temp, CV_GRAY2BGR);
+        cvtColor(*image, temp, COLOR_GRAY2BGR);
         image = &temp;
         channels = 3;
     }

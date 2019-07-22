@@ -48,7 +48,7 @@ PERF_TEST_P( TestWarpAffine, WarpAffine,
 #endif
 }
 
-PERF_TEST_P(TestWarpAffine, WarpAffine_ovx,
+PERF_TEST_P(TestWarpAffine, DISABLED_WarpAffine_ovx,
     Combine(
         Values(szVGA, sz720p, sz1080p),
         InterType::all(),
@@ -116,7 +116,7 @@ PERF_TEST_P( TestWarpPerspective, WarpPerspective,
 #endif
 }
 
-PERF_TEST_P(TestWarpPerspective, WarpPerspective_ovx,
+PERF_TEST_P(TestWarpPerspective, DISABLED_WarpPerspective_ovx,
     Combine(
         Values(szVGA, sz720p, sz1080p),
         InterType::all(),
@@ -287,6 +287,17 @@ PERF_TEST(Transform, getPerspectiveTransform_1000)
     }
     PERF_SAMPLE_END()
 
+    SANITY_CHECK_NOTHING();
+}
+
+PERF_TEST(Undistort, InitUndistortMap)
+{
+    Size size_w_h(512 + 3, 512);
+    Mat k(3, 3, CV_32FC1);
+    Mat d(1, 14, CV_64FC1);
+    Mat dst(size_w_h, CV_32FC2);
+    declare.in(k, d, WARMUP_RNG).out(dst);
+    TEST_CYCLE() initUndistortRectifyMap(k, d, noArray(), k, size_w_h, CV_32FC2, dst, noArray());
     SANITY_CHECK_NOTHING();
 }
 

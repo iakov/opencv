@@ -137,7 +137,11 @@ public:
 
 /** @brief Abstract base class for 2D image feature detectors and descriptor extractors
 */
+#ifdef __EMSCRIPTEN__
+class CV_EXPORTS_W Feature2D : public Algorithm
+#else
 class CV_EXPORTS_W Feature2D : public virtual Algorithm
+#endif
 {
 public:
     virtual ~Feature2D();
@@ -324,7 +328,7 @@ public:
     but it is a little faster to compute.
     @param patchSize size of the patch used by the oriented BRIEF descriptor. Of course, on smaller
     pyramid layers the perceived image area covered by a feature will be larger.
-    @param fastThreshold
+    @param fastThreshold the fast threshold
      */
     CV_WRAP static Ptr<ORB> create(int nfeatures=500, float scaleFactor=1.2f, int nlevels=8, int edgeThreshold=31,
         int firstLevel=0, int WTA_K=2, int scoreType=ORB::HARRIS_SCORE, int patchSize=31, int fastThreshold=20);

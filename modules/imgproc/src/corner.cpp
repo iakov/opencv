@@ -56,9 +56,6 @@ static void calcMinEigenVal( const Mat& _cov, Mat& _dst )
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
-#if CV_SIMD128
-    bool haveSimd = hasSIMD128();
-#endif
 
     if( _cov.isContinuous() && _dst.isContinuous() )
     {
@@ -78,7 +75,6 @@ static void calcMinEigenVal( const Mat& _cov, Mat& _dst )
             j = 0;
 
 #if CV_SIMD128
-        if( haveSimd )
         {
             v_float32x4 half = v_setall_f32(0.5f);
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
@@ -112,9 +108,6 @@ static void calcHarris( const Mat& _cov, Mat& _dst, double k )
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
-#if CV_SIMD128
-    bool haveSimd = hasSIMD128();
-#endif
 
     if( _cov.isContinuous() && _dst.isContinuous() )
     {
@@ -135,7 +128,6 @@ static void calcHarris( const Mat& _cov, Mat& _dst, double k )
             j = 0;
 
 #if CV_SIMD128
-        if( haveSimd )
         {
             v_float32x4 v_k = v_setall_f32((float)k);
 
@@ -254,9 +246,6 @@ cornerEigenValsVecs( const Mat& src, Mat& eigenv, int block_size,
 #if CV_TRY_AVX
     bool haveAvx = CV_CPU_HAS_SUPPORT_AVX;
 #endif
-#if CV_SIMD128
-    bool haveSimd = hasSIMD128();
-#endif
 
     int depth = src.depth();
     double scale = (double)(1 << ((aperture_size > 0 ? aperture_size : 3) - 1)) * block_size;
@@ -298,7 +287,6 @@ cornerEigenValsVecs( const Mat& src, Mat& eigenv, int block_size,
             j = 0;
 
 #if CV_SIMD128
-        if( haveSimd )
         {
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
             {
@@ -493,7 +481,7 @@ namespace cv
 static bool ipp_cornerMinEigenVal( InputArray _src, OutputArray _dst, int blockSize, int ksize, int borderType )
 {
 #if IPP_VERSION_X100 >= 800
-    CV_INSTRUMENT_REGION_IPP()
+    CV_INSTRUMENT_REGION_IPP();
 
     Mat src = _src.getMat();
     _dst.create( src.size(), CV_32FC1 );
@@ -565,7 +553,7 @@ static bool ipp_cornerMinEigenVal( InputArray _src, OutputArray _dst, int blockS
 
 void cv::cornerMinEigenVal( InputArray _src, OutputArray _dst, int blockSize, int ksize, int borderType )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     CV_OCL_RUN(_src.dims() <= 2 && _dst.isUMat(),
                ocl_cornerMinEigenValVecs(_src, _dst, blockSize, ksize, 0.0, borderType, MINEIGENVAL))
@@ -594,7 +582,7 @@ namespace cv
 static bool ipp_cornerHarris( Mat &src, Mat &dst, int blockSize, int ksize, double k, int borderType )
 {
 #if IPP_VERSION_X100 >= 810
-    CV_INSTRUMENT_REGION_IPP()
+    CV_INSTRUMENT_REGION_IPP();
 
     {
         int type = src.type(), depth = CV_MAT_DEPTH(type), cn = CV_MAT_CN(type);
@@ -649,7 +637,7 @@ static bool ipp_cornerHarris( Mat &src, Mat &dst, int blockSize, int ksize, doub
 
 void cv::cornerHarris( InputArray _src, OutputArray _dst, int blockSize, int ksize, double k, int borderType )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     CV_OCL_RUN(_src.dims() <= 2 && _dst.isUMat(),
                ocl_cornerMinEigenValVecs(_src, _dst, blockSize, ksize, k, borderType, HARRIS))
@@ -672,7 +660,7 @@ void cv::cornerHarris( InputArray _src, OutputArray _dst, int blockSize, int ksi
 
 void cv::cornerEigenValsAndVecs( InputArray _src, OutputArray _dst, int blockSize, int ksize, int borderType )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     Mat src = _src.getMat();
     Size dsz = _dst.size();
@@ -687,7 +675,7 @@ void cv::cornerEigenValsAndVecs( InputArray _src, OutputArray _dst, int blockSiz
 
 void cv::preCornerDetect( InputArray _src, OutputArray _dst, int ksize, int borderType )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     int type = _src.type();
     CV_Assert( type == CV_8UC1 || type == CV_32FC1 );
@@ -711,7 +699,6 @@ void cv::preCornerDetect( InputArray _src, OutputArray _dst, int ksize, int bord
     factor = 1./(factor * factor * factor);
 #if CV_SIMD128
     float factor_f = (float)factor;
-    bool haveSimd = hasSIMD128();
     v_float32x4 v_factor = v_setall_f32(factor_f), v_m2 = v_setall_f32(-2.0f);
 #endif
 
@@ -729,7 +716,6 @@ void cv::preCornerDetect( InputArray _src, OutputArray _dst, int ksize, int bord
         j = 0;
 
 #if CV_SIMD128
-        if (haveSimd)
         {
             for( ; j <= size.width - v_float32x4::nlanes; j += v_float32x4::nlanes )
             {
