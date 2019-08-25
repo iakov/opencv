@@ -290,14 +290,22 @@ PERF_TEST(Transform, getPerspectiveTransform_1000)
     SANITY_CHECK_NOTHING();
 }
 
-PERF_TEST(Undistort, InitUndistortMap)
+PERF_TEST(Transform, getPerspectiveTransform_QR_1000)
 {
-    Size size_w_h(512 + 3, 512);
-    Mat k(3, 3, CV_32FC1);
-    Mat d(1, 14, CV_64FC1);
-    Mat dst(size_w_h, CV_32FC2);
-    declare.in(k, d, WARMUP_RNG).out(dst);
-    TEST_CYCLE() initUndistortRectifyMap(k, d, noArray(), k, size_w_h, CV_32FC2, dst, noArray());
+    unsigned int size = 8;
+    Mat source(1, size/2, CV_32FC2);
+    Mat destination(1, size/2, CV_32FC2);
+    Mat transformCoefficient;
+
+    declare.in(source, destination, WARMUP_RNG);
+
+    PERF_SAMPLE_BEGIN()
+    for (int i = 0; i < 1000; i++)
+    {
+        transformCoefficient = getPerspectiveTransform(source, destination, DECOMP_QR);
+    }
+    PERF_SAMPLE_END()
+
     SANITY_CHECK_NOTHING();
 }
 
