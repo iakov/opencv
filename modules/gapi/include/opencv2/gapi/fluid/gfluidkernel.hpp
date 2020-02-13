@@ -39,7 +39,7 @@ namespace fluid
      */
     GAPI_EXPORTS cv::gapi::GBackend backend();
     /** @} */
-} // namespace flud
+} // namespace fluid
 } // namespace gapi
 
 
@@ -197,6 +197,14 @@ template<typename U> struct fluid_get_in<cv::GArray<U>>
     static const std::vector<U>& get(const cv::GArgs &in_args, int idx)
     {
         return in_args.at(idx).unsafe_get<cv::detail::VectorRef>().rref<U>();
+    }
+};
+
+template<typename U> struct fluid_get_in<cv::GOpaque<U>>
+{
+    static const U& get(const cv::GArgs &in_args, int idx)
+    {
+        return in_args.at(idx).unsafe_get<cv::detail::OpaqueRef>().rref<U>();
     }
 };
 

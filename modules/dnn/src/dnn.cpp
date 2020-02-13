@@ -109,6 +109,22 @@ public:
 #ifdef HAVE_INF_ENGINE
     static inline bool checkIETarget(Target target)
     {
+#if INF_ENGINE_VER_MAJOR_GE(INF_ENGINE_RELEASE_2019R3)
+        // Lightweight detection
+        const std::vector<std::string> devices = getCore().GetAvailableDevices();
+        for (std::vector<std::string>::const_iterator i = devices.begin(); i != devices.end(); ++i)
+        {
+            if (std::string::npos != i->find("MYRIAD") && target == DNN_TARGET_MYRIAD)
+                return true;
+            else if (std::string::npos != i->find("FPGA") && target == DNN_TARGET_FPGA)
+                return true;
+            else if (std::string::npos != i->find("CPU") && target == DNN_TARGET_CPU)
+                return true;
+            else if (std::string::npos != i->find("GPU") && (target == DNN_TARGET_OPENCL || target == DNN_TARGET_OPENCL_FP16))
+                return true;
+        }
+        return false;
+#else
         cv::dnn::Net net;
         cv::dnn::LayerParams lp;
         lp.set("kernel_size", 1);
@@ -131,6 +147,24 @@ public:
             CV_LOG_INFO(NULL, "checkIETarget(" << (int)target << ") has failed with message: " << e.what());
             return false;
         }
+        return true;
+#endif
+    }
+#endif
+
+#ifdef HAVE_CUDA
+    static inline bool cudaDeviceSupportsFp16() {
+        if (cv::cuda::getCudaEnabledDeviceCount() <= 0)
+            return false;
+        const int devId = cv::cuda::getDevice();
+        if (devId<0)
+            return false;
+        cv::cuda::DeviceInfo dev_info(devId);
+        if (!dev_info.isCompatible())
+            return false;
+        int version = dev_info.majorVersion() * 10 + dev_info.minorVersion();
+        if (version < 53)
+            return false;
         return true;
     }
 #endif
@@ -198,7 +232,8 @@ private:
 #ifdef HAVE_CUDA
         if (haveCUDA()) {
             backends.push_back(std::make_pair(DNN_BACKEND_CUDA, DNN_TARGET_CUDA));
-            backends.push_back(std::make_pair(DNN_BACKEND_CUDA, DNN_TARGET_CUDA_FP16));
+            if (cudaDeviceSupportsFp16())
+                backends.push_back(std::make_pair(DNN_BACKEND_CUDA, DNN_TARGET_CUDA_FP16));
         }
 #endif
     }
@@ -3063,7 +3098,9 @@ struct Net::Impl
         catch (const cv::Exception& e)
         {
             CV_LOG_ERROR(NULL, "OPENCV/DNN: [" << l->type << "]:(" << l->name << "): getMemoryShapes() throws exception." <<
-                    " inputs=" << is.size() << " outputs=" << os.size() << "/" << requiredOutputs);
+                    " inputs=" << is.size() <<
+                    " outputs=" << os.size() << "/" << requiredOutputs <<
+                    " blobs=" << l->blobs.size());
             for (size_t i = 0; i < is.size(); ++i)
             {
                 CV_LOG_ERROR(NULL, "    input[" << i << "] = " << toString(is[i]));
@@ -3071,6 +3108,10 @@ struct Net::Impl
             for (size_t i = 0; i < os.size(); ++i)
             {
                 CV_LOG_ERROR(NULL, "    output[" << i << "] = " << toString(os[i]));
+            }
+            for (size_t i = 0; i < l->blobs.size(); ++i)
+            {
+                CV_LOG_ERROR(NULL, "    blobs[" << i << "] = " << typeToString(l->blobs[i].type()) << " " << toString(shape(l->blobs[i])));
             }
             CV_LOG_ERROR(NULL, "Exception message: " << e.what());
             throw;

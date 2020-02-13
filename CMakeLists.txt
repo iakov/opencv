@@ -68,6 +68,9 @@ if(POLICY CMP0075)
   cmake_policy(SET CMP0075 NEW)  # CMake 3.12+: Include file check macros honor `CMAKE_REQUIRED_LIBRARIES`
 endif()
 
+if(POLICY CMP0077)
+  cmake_policy(SET CMP0077 NEW)  # CMake 3.13+: option() honors normal variables.
+endif()
 
 #
 # Configure OpenCV CMake hooks
@@ -789,9 +792,13 @@ endif()
 
 foreach(hal ${OpenCV_HAL})
   if(hal STREQUAL "carotene")
-    add_subdirectory(3rdparty/carotene/hal)
-    ocv_hal_register(CAROTENE_HAL_LIBRARIES CAROTENE_HAL_HEADERS CAROTENE_HAL_INCLUDE_DIRS)
-    list(APPEND OpenCV_USED_HAL "carotene (ver ${CAROTENE_HAL_VERSION})")
+    if(";${CPU_BASELINE_FINAL};" MATCHES ";NEON;")
+      add_subdirectory(3rdparty/carotene/hal)
+      ocv_hal_register(CAROTENE_HAL_LIBRARIES CAROTENE_HAL_HEADERS CAROTENE_HAL_INCLUDE_DIRS)
+      list(APPEND OpenCV_USED_HAL "carotene (ver ${CAROTENE_HAL_VERSION})")
+    else()
+      message(STATUS "Carotene: NEON is not available, disabling carotene...")
+    endif()
   elseif(hal STREQUAL "openvx")
     add_subdirectory(3rdparty/openvx)
     ocv_hal_register(OPENVX_HAL_LIBRARIES OPENVX_HAL_HEADERS OPENVX_HAL_INCLUDE_DIRS)
