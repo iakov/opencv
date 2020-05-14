@@ -1757,6 +1757,7 @@ struct Net::Impl
 
             Ptr<InfEngineBackendNode> ieNode = node.dynamicCast<InfEngineBackendNode>();
             CV_Assert(!ieNode.empty());
+            ieNode->net->reset();
 
             for (it = layers.begin(); it != layers.end(); ++it)
             {
@@ -2058,6 +2059,7 @@ struct Net::Impl
 
             Ptr<InfEngineNgraphNode> ieNode = node.dynamicCast<InfEngineNgraphNode>();
             CV_Assert(!ieNode.empty());
+            ieNode->net->reset();
 
             for (it = layers.begin(); it != layers.end(); ++it)
             {
@@ -2228,7 +2230,11 @@ struct Net::Impl
 
                     auto ieInpNode = inputNodes[i].dynamicCast<InfEngineNgraphNode>();
                     CV_Assert(oid < ieInpNode->node->get_output_size());
+#if INF_ENGINE_VER_MAJOR_GT(2020030000)
+                    inputNodes[i] = Ptr<BackendNode>(new InfEngineNgraphNode(ieInpNode->node->get_output_as_single_output_node(oid)));
+#else
                     inputNodes[i] = Ptr<BackendNode>(new InfEngineNgraphNode(ieInpNode->node->get_output_as_single_output_node(oid, false)));
+#endif
                 }
 
                 if (layer->supportBackend(preferableBackend))
@@ -3444,6 +3450,8 @@ Net Net::Impl::createNetworkFromModelOptimizer(InferenceEngine::CNNNetwork& ieNe
 {
     CV_TRACE_FUNCTION();
 
+    CV_TRACE_REGION("register_inputs");
+
     std::vector<String> inputsNames;
     std::vector<MatShape> inp_shapes;
     for (auto& it : ieNet.getInputsInfo())
@@ -3461,6 +3469,8 @@ Net Net::Impl::createNetworkFromModelOptimizer(InferenceEngine::CNNNetwork& ieNe
     {
         cvNet.setInputShape(inputsNames[inp_id], inp_shapes[inp_id]);
     }
+
+    CV_TRACE_REGION_NEXT("backendNode");
 
     Ptr<BackendNode> backendNode;
 #ifdef HAVE_DNN_NGRAPH
@@ -3483,8 +3493,25 @@ Net Net::Impl::createNetworkFromModelOptimizer(InferenceEngine::CNNNetwork& ieNe
 #endif
     }
 
+    CV_TRACE_REGION_NEXT("register_outputs");
+
+#ifdef HAVE_DNN_NGRAPH
+    auto ngraphFunction = ieNet.getFunction();
+#if INF_ENGINE_VER_MAJOR_LT(INF_ENGINE_RELEASE_2020_2)
+    std::list< std::shared_ptr<ngraph::Node> > ngraphOperations;
+#else
+    std::vector< std::shared_ptr<ngraph::Node> > ngraphOperations;
+#endif
+    if (ngraphFunction)
+    {
+        ngraphOperations = ngraphFunction->get_ops();
+    }
+#endif
+
     for (auto& it : ieNet.getOutputsInfo())
     {
+        CV_TRACE_REGION("output");
+
         LayerParams lp;
         int lid = cvNet.addLayer(it.first, "", lp);
 
@@ -3493,15 +3520,38 @@ Net Net::Impl::createNetworkFromModelOptimizer(InferenceEngine::CNNNetwork& ieNe
 #ifdef HAVE_DNN_NGRAPH
         if (DNN_BACKEND_INFERENCE_ENGINE_NGRAPH == getInferenceEngineBackendTypeParam())
         {
+            const auto& outputName = it.first;
             Ptr<Layer> cvLayer(new NgraphBackendLayer(ieNet));
+            cvLayer->name = outputName;
+            cvLayer->type = "_unknown_";
 
-            InferenceEngine::CNNLayerPtr ieLayer = ieNet.getLayerByName(it.first.c_str());
-            CV_Assert(ieLayer);
+            if (ngraphFunction)
+            {
+                CV_TRACE_REGION("ngraph_function");
+                bool found = false;
+                for (const auto& op : ngraphOperations)
+                {
+                    CV_Assert(op);
+                    if (op->get_friendly_name() == outputName)
+                    {
+                        const std::string typeName = op->get_type_info().name;
+                        cvLayer->type = typeName;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    CV_LOG_WARNING(NULL, "DNN/IE: Can't determine output layer type: '" << outputName << "'");
+            }
+            else
+            {
+                CV_TRACE_REGION("legacy_cnn_layer");
+                InferenceEngine::CNNLayerPtr ieLayer = ieNet.getLayerByName(it.first.c_str());
+                CV_Assert(ieLayer);
 
-            cvLayer->name = it.first;
-            cvLayer->type = ieLayer->type;
+                cvLayer->type = ieLayer->type;
+            }
             ld.layerInstance = cvLayer;
-
             ld.backendNodes[DNN_BACKEND_INFERENCE_ENGINE_NGRAPH] = backendNode;
         }
         else
@@ -3526,6 +3576,9 @@ Net Net::Impl::createNetworkFromModelOptimizer(InferenceEngine::CNNNetwork& ieNe
         for (int i = 0; i < inputsNames.size(); ++i)
             cvNet.connect(0, i, lid, i);
     }
+
+    CV_TRACE_REGION_NEXT("finalize");
+
     cvNet.setPreferableBackend(getInferenceEngineBackendTypeParam());
 
     cvNet.impl->skipInfEngineInit = true;
@@ -4942,16 +4995,15 @@ void LayerFactory::registerLayer(const String &type, Constructor constructor)
     CV_TRACE_ARG_VALUE(type, "type", type.c_str());
 
     cv::AutoLock lock(getLayerFactoryMutex());
-    String type_ = toLowerCase(type);
-    LayerFactory_Impl::iterator it = getLayerFactoryImpl().find(type_);
+    LayerFactory_Impl::iterator it = getLayerFactoryImpl().find(type);
 
     if (it != getLayerFactoryImpl().end())
     {
         if (it->second.back() == constructor)
-            CV_Error(cv::Error::StsBadArg, "Layer \"" + type_ + "\" already was registered");
+            CV_Error(cv::Error::StsBadArg, "Layer \"" + type + "\" already was registered");
         it->second.push_back(constructor);
     }
-    getLayerFactoryImpl().insert(std::make_pair(type_, std::vector<Constructor>(1, constructor)));
+    getLayerFactoryImpl().insert(std::make_pair(type, std::vector<Constructor>(1, constructor)));
 }
 
 void LayerFactory::unregisterLayer(const String &type)
@@ -4960,9 +5012,8 @@ void LayerFactory::unregisterLayer(const String &type)
     CV_TRACE_ARG_VALUE(type, "type", type.c_str());
 
     cv::AutoLock lock(getLayerFactoryMutex());
-    String type_ = toLowerCase(type);
 
-    LayerFactory_Impl::iterator it = getLayerFactoryImpl().find(type_);
+    LayerFactory_Impl::iterator it = getLayerFactoryImpl().find(type);
     if (it != getLayerFactoryImpl().end())
     {
         if (it->second.size() > 1)
@@ -4978,8 +5029,7 @@ Ptr<Layer> LayerFactory::createLayerInstance(const String &type, LayerParams& pa
     CV_TRACE_ARG_VALUE(type, "type", type.c_str());
 
     cv::AutoLock lock(getLayerFactoryMutex());
-    String type_ = toLowerCase(type);
-    LayerFactory_Impl::const_iterator it = getLayerFactoryImpl().find(type_);
+    LayerFactory_Impl::const_iterator it = getLayerFactoryImpl().find(type);
 
     if (it != getLayerFactoryImpl().end())
     {
